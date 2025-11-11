@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.18)
 project(
   jpegloader
   VERSION 0.1.0.0
-  DESCRIPTION "Lite JPEG loader library"
+  DESCRIPTION "Lightweight JPEG loader library"
   HOMEPAGE_URL "https://gitverse.ru/DimaO87/jpegloader"
   LANGUAGES C
 )
@@ -13,13 +13,45 @@ include(GNUInstallDirs)
 
 set(
   SOURCES
+  src/jpegapp.c
+  src/jpegdht.c
+  src/jpegdqt.c
+  src/jpegfunc.c
   src/jpegloader.c
+  src/jpegparser.c
+  src/jpegsof.c
+  src/jpegsos.c
+  src/huffman.c
 )
 
 set(
-  HEADERS
-  include/jpegloader/jpegloader.h
+  PRIVATE_HEADERS
+  src/jpegapp.h
+  src/jpegcontext.h
+  src/jpegdht.h
+  src/jpegdqt.h
+  src/jpegfunc.h
+  src/jpeglog.h
+  src/jpegparser.h
+  src/jpegsof.h
+  src/jpegsos.h
+  src/huffman.h
 )
+
+set(
+  PUBLIC_HEADERS
+  include/jpegloader/jpegloader.h
+  include/jpegloader/jpegtypes.h
+)
+
+# Endianness
+include(TestBigEndian)
+TEST_BIG_ENDIAN(IS_BIG_ENDIAN)
+if (IS_BIG_ENDIAN)
+  set(WORDS_BIGENDIAN 1)
+else()
+  unset(WORDS_BIGENDIAN)
+endif()
 
 # Dependencies
 
@@ -34,7 +66,7 @@ target_include_directories(
 )
 set_target_properties(
   ${PROJECT_NAME} PROPERTIES
-  PUBLIC_HEADER "${HEADERS}"
+  PUBLIC_HEADER "${PUBLIC_HEADERS}"
 )
 # add_dependencies(
 #   jpegloader pdf
@@ -49,15 +81,16 @@ target_link_libraries(
 )
 
 # Documentation
-find_program(
-  MAKEINFO
-  makeinfo
-)
-# if(MAKEINFO)
-#   add_subdirectory(doc)
-# else()
-#   message(WARNING "makeinfo not found. Skip document building.")
-# endif()
+option(BUILD_DOCS "Enable documentation building" ON)
+if (BUILD_DOCS)
+find_program(DOXYGEN doxygen)
+
+# find_program(
+#   MAKEINFO
+#   makeinfo
+# )
+add_subdirectory(doc)
+endif()
 
 # Config file
 set(PACKAGE ${PROJECT_NAME})
@@ -106,9 +139,9 @@ install(
 # endif()
 
 # Testing
-# option(DISABLE_TESTING "Disable test routine" OFF)
-# if(NOT DISABLE_TESTING)
-#   add_subdirectory(tests)
-# else()
-#   message(NOTICE "Testing is disabled. ``check'' is unavailable")
-# endif()
+option(DISABLE_TESTING "Disable test routine" OFF)
+if(NOT DISABLE_TESTING)
+  add_subdirectory(tests)
+else()
+  message(NOTICE "Testing is disabled. ``check'' is unavailable")
+endif()
