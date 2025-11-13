@@ -1,3 +1,8 @@
+/**
+ * \file
+ * \brief JPEG loader library interface file
+ */
+
 #ifndef JPEGLOADER_H
 #define JPEGLOADER_H
 

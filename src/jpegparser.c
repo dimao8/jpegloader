@@ -1,7 +1,10 @@
-#include "jpegparser.h"
+#include <jpegloader/jpegtypes.h>
+
+#include "bitstream.h"
+#include "huffman.h"
 #include "jpegcontext.h"
-#include "jpegloader/jpegtypes.h"
 #include "jpeglog.h"
+#include "jpegparser.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -129,6 +132,7 @@ jpeg_error_t
 jpeg_decoding (jpeg_context_t *jpeg_context, jpeg_header_t *header,
                void **data)
 {
+  huffman_node_t *node;
   for (int i = 0; i < 4; i++)
     {
       if (DHT_CLASS (jpeg_context->dht_dc[i].class_dest) != DHT_CLASS_INV)
@@ -160,6 +164,15 @@ jpeg_decoding (jpeg_context_t *jpeg_context, jpeg_header_t *header,
                     }
                 }
             }
+
+          node = h_create_from_codes (jpeg_context->dht_dc + i);
+          if (node == NULL)
+            {
+              JPEG_LOG ("[E] Huffman error in DC #%i\n", i);
+              return JPEG_ERROR_HUFFMAN;
+            }
+
+          jpeg_context->huffman_tree_dc[i] = node;
         }
     }
 
@@ -194,8 +207,35 @@ jpeg_decoding (jpeg_context_t *jpeg_context, jpeg_header_t *header,
                     }
                 }
             }
+
+          node = h_create_from_codes (jpeg_context->dht_ac + i);
+          if (node == NULL)
+            {
+              JPEG_LOG ("[E] Huffman error in DC #%i\n", i);
+              return JPEG_ERROR_HUFFMAN;
+            }
+
+          jpeg_context->huffman_tree_ac[i] = node;
         }
     }
+
+  jpeg_bitstream_t *bitstream = bitstream_create (
+      jpeg_context->scans[0].scan_data, jpeg_context->scans[0].scan_length);
+  if (bitstream == NULL)
+    {
+      JPEG_LOG ("[E] Huffman error in bitstream\n");
+      return JPEG_ERROR_HUFFMAN;
+    }
+
+  for (int i = 0; i < 64; i++)
+    {
+      while (true)
+        {
+          
+        }
+    }
+
+  // TODO : Continue
 
   return JPEG_ERROR_NOT_SUPPORTED;
 }

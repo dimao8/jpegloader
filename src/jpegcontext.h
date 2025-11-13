@@ -124,12 +124,12 @@ typedef struct jpeg_context_tag
   jpeg_application_t app[16]; /// App array (APP markers content)
   jpeg_dqt_t dqt[4];          /// Quantization tables (DQT markers content)
   jpeg_dht_t dht_dc[4];       /// DC Huffman tables
-  huffman_node_t *huffman_tree_dc; /// DC Huffman trees
-  jpeg_dht_t dht_ac[4];            /// AC Huffman tables
-  huffman_node_t *huffman_tree_ac; /// AC Huffman trees
-  size_t scans_capacity;           /// Memory for scans
-  size_t scans_count;              /// Number of scans
-  jpeg_scan_header_t *scans;       /// Scan table
+  huffman_node_t *huffman_tree_dc[4]; /// DC Huffman trees
+  jpeg_dht_t dht_ac[4];               /// AC Huffman tables
+  huffman_node_t *huffman_tree_ac[4]; /// AC Huffman trees
+  size_t scans_capacity;              /// Memory for scans
+  size_t scans_count;                 /// Number of scans
+  jpeg_scan_header_t *scans;          /// Scan table
 } jpeg_context_t;
 
 #endif // JPEGCONTEXT_H

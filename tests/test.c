@@ -101,6 +101,11 @@ main (int argc, char **argv)
           fflush (stdout);
           break;
 
+        case JPEG_ERROR_HUFFMAN:
+          printf ("[E] Huffman error\n");
+          fflush (stdout);
+          break;
+
         default:
           printf ("[E] Unknown error code (%i)\n", (int)err);
           fflush (stdout);
