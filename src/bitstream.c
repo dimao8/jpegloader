@@ -1,7 +1,8 @@
 #include "bitstream.h"
+#include "jpegfunc.h"
 #include "jpeglog.h"
 
-#include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 
 /**
@@ -52,44 +53,40 @@ bitstream_reset (jpeg_bitstream_t *stream)
 uint32_t
 bitstream_extract (jpeg_bitstream_t *stream, size_t length)
 {
-  uint16_t tmp;
+  uint16_t tmp = 0;
+  size_t n = 0;
+  size_t i = 0;
 
-  if ((stream == NULL) || (length == 0) || (length > 16))
+  if ((stream == NULL)
+      || (length > 16)) // Stream is NULL or length is incorrect
     return BITSTREAM_EOS;
 
-  const uint8_t mask = 0xFF >> stream->bit_offset;
+  if (length
+      > ((stream->byte_length - stream->byte_pos) * 8) - stream->bit_offset)
+    return BITSTREAM_EOS;
 
-  switch (stream->byte_length - stream->byte_pos)
+  if (length == 0)
+    return 0;
+
+  tmp = (uint16_t)(stream->bytes[stream->byte_pos + i])
+        << (stream->bit_offset + 8);
+  i++;
+  if ((stream->byte_pos + i) < stream->byte_length)
     {
-    case 1: // Extract one byte and fill others with 0
-      DEBUG_LOG ("[D] Extract one byte and fill others with 0\n");
-      tmp = ((uint16_t)stream->bytes[stream->byte_pos] & mask)
-            << (stream->bit_offset + 8);
-      break;
-
-    case 2: // Extract two bytes and fill others with 0
-      DEBUG_LOG ("[D] Extract two bytes and fill others with 0\n");
-      tmp = ((uint16_t)stream->bytes[stream->byte_pos] & mask)
-            << (stream->bit_offset + 8);
-      tmp |= ((uint16_t)stream->bytes[stream->byte_pos + 1]
-              << stream->bit_offset);
-      break;
-
-    default: // Extract three bytes
-      DEBUG_LOG ("[D] Extract three bytes\n");
-      tmp = ((uint16_t)stream->bytes[stream->byte_pos] & mask)
-            << (stream->bit_offset + 8);
-      tmp |= ((uint16_t)stream->bytes[stream->byte_pos + 1]
-              << stream->bit_offset);
-      tmp |= ((uint16_t)stream->bytes[stream->byte_pos + 2]
-              >> (8 - stream->bit_offset));
-      break;
+      tmp |= (uint16_t)(stream->bytes[stream->byte_pos + i])
+             << stream->bit_offset;
     }
+  i++;
+  if ((stream->byte_pos + i) < stream->byte_length)
+    {
+      tmp |= (uint16_t)(stream->bytes[stream->byte_pos + i])
+             >> (8 - stream->bit_offset);
+    }
+  i++;
 
   tmp >>= 16 - length;
-  size_t step = stream->bit_offset + length;
-  stream->bit_offset = (stream->bit_offset + step) % 8;
-  stream->byte_pos += step / 8;
+  stream->byte_pos += (stream->bit_offset + length) / 8;
+  stream->bit_offset = (stream->bit_offset + length) % 8;
 
   return tmp;
 }
@@ -116,4 +113,39 @@ bitstream_next_bit (jpeg_bitstream_t *stream)
     }
 
   return tmp;
+}
+
+/* ********************** bitstream_print_near_current ********************* */
+
+void
+bitstream_print_near_current (jpeg_bitstream_t *stream)
+{
+  if (stream == NULL)
+    {
+      DEBUG_LOG ("[D] stream is NULL\n");
+      return;
+    }
+
+  if (stream->byte_length == 0)
+    {
+      DEBUG_LOG ("[D] stream is empty\n");
+      return;
+    }
+
+  DEBUG_LOG ("[D] stream near [%zi]: ", stream->byte_pos);
+  int start = clampi (stream->byte_pos - 2, 0, stream->byte_pos);
+  int end
+      = clampi (stream->byte_pos + 2, stream->byte_pos, stream->byte_length);
+  for (int i = start; i < end; i++)
+    {
+      DEBUG_LOG ("0x%02hhx", stream->bytes[i]);
+      if (i != end - 1)
+        {
+          DEBUG_LOG (" ");
+        }
+      else
+        {
+          DEBUG_LOG ("\n");
+        }
+    }
 }

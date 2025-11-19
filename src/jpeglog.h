@@ -1,6 +1,8 @@
 #ifndef JPEGDEBUG_H
 #define JPEGDEBUG_H
 
+#include <stdio.h>
+
 #ifndef NDEBUG
 #define DEBUG_LOG(...) \
   fprintf(stdout, __VA_ARGS__); \

@@ -7,7 +7,12 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
+/**
+ * \brief JPEG component descriptor
+ * \struct header_component_descriptor_t
+ */
 typedef struct header_component_descriptor_tag
 {
   uint8_t component_id;    /// Component identifier
@@ -15,11 +20,14 @@ typedef struct header_component_descriptor_tag
   uint8_t dqt_destination; /// Quantization table destination selector
 } header_component_descriptor_t;
 
-#define SAMPLING_H(x) ((x >> 4) & 0xF)
-#define SAMPLING_V(x) (x & 0xF)
+#define SAMPLING_H_POS 4
+#define SAMPLING_L_POS 0
+#define SAMPLING_H(x) ((x >> SAMPLING_H_POS) & 0xF)
+#define SAMPLING_V(x) ((x >> SAMPLING_L_POS) & 0xF)
 
 /**
  * \brief JPEG header (SOF marker content)
+ * \struct jpeg_header_t
  */
 typedef struct jpeg_header_tag
 {
@@ -33,6 +41,7 @@ typedef struct jpeg_header_tag
 
 /**
  * \brief JPEG loader error codes
+ * \enum jpeg_error_t
  */
 typedef enum jpeg_error_tag
 {
@@ -58,8 +67,9 @@ typedef struct huffman_node_tag
 {
   huffman_node_t *left;
   huffman_node_t *right;
-  bool unused;
-  uint8_t value;
+  size_t level;
+  uint16_t code;
+  int value;
 } huffman_node_t;
 
 #endif // JPEGTYPES_H
