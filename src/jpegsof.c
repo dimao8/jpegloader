@@ -139,6 +139,7 @@ jpeg_sof_extract (jpeg_context_t *context, uint8_t n, const uint8_t *stream,
 
   for (int i = 0; i < context->header.n_component; i++)
     {
+      context->header.components[i].dc_cache = 0;
       context->header.components[i].component_id = stream[*pos + 8 + i * 3];
       context->header.components[i].sampling = stream[*pos + 9 + i * 3];
       context->header.components[i].dqt_destination

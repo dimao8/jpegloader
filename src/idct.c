@@ -50,20 +50,35 @@ const float dct_m[64]
         0.4903926402016152f,  -0.4157348061512727f, 0.2777851165098012f,
         -0.0975451610080642f };
 
+const float dct_mt[64]
+    = { dct_m[0],  dct_m[8],  dct_m[16], dct_m[24], dct_m[32], dct_m[40],
+        dct_m[48], dct_m[56], dct_m[1],  dct_m[9],  dct_m[17], dct_m[25],
+        dct_m[33], dct_m[41], dct_m[49], dct_m[57], dct_m[2],  dct_m[10],
+        dct_m[18], dct_m[26], dct_m[34], dct_m[42], dct_m[50], dct_m[58],
+        dct_m[3],  dct_m[11], dct_m[19], dct_m[27], dct_m[35], dct_m[43],
+        dct_m[51], dct_m[59], dct_m[4],  dct_m[12], dct_m[20], dct_m[28],
+        dct_m[36], dct_m[44], dct_m[52], dct_m[60], dct_m[5],  dct_m[13],
+        dct_m[21], dct_m[29], dct_m[37], dct_m[45], dct_m[53], dct_m[61],
+        dct_m[6],  dct_m[14], dct_m[22], dct_m[30], dct_m[38], dct_m[46],
+        dct_m[54], dct_m[62], dct_m[7],  dct_m[15], dct_m[23], dct_m[31],
+        dct_m[39], dct_m[47], dct_m[55], dct_m[63] };
+
 /* ******************************** mul8mx8i ******************************* */
 
 void
 mul8mx8i (float *r, const float *m, const int *i)
 {
+  float d;
   for (int k = 0; k < 8; k++)
     {
       for (int j = 0; j < 8; j++)
         {
-          r[k * 8 + j] = 0.0f;
+          d = 0.0f;
           for (int n = 0; n < 8; n++)
             {
-              r[k * 8 + j] += m[k * 8 + n] * (float)i[n * 8 + j];
+              d += m[k * 8 + n] * (float)i[n * 8 + j];
             }
+          r[k * 8 + j] = d;
         }
     }
 }
@@ -73,16 +88,17 @@ mul8mx8i (float *r, const float *m, const int *i)
 void
 mul8fx8mt (int *r, const float *f, const float *m)
 {
+  float d;
   for (int k = 0; k < 8; k++)
     {
       for (int j = 0; j < 8; j++)
         {
-          r[k * 8 + j] = 0.0f;
+          d = 0;
           for (int n = 0; n < 8; n++)
             {
-              r[k * 8 + j] += f[k * 8 + n] * m[j * 8 + n];
+              d += f[k * 8 + n] * m[n * 8 + j];
             }
-          r[k * 8 + j] = clampi (r[k * 8 + j] + 128, 0, 255);
+          r[k * 8 + j] = clampi (d + 128, 0, 255);
         }
     }
 }
@@ -97,6 +113,6 @@ idct (int *output, const int *input)
   if (input == NULL || output == NULL)
     return;
 
-  mul8mx8i (tmp, dct_m, input);
+  mul8mx8i (tmp, dct_mt, input);
   mul8fx8mt (output, tmp, dct_m);
 }

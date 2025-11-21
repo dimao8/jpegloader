@@ -13,6 +13,14 @@
 #include <string.h>
 
 int make_from_huffman (uint16_t value, size_t length);
+bool make_jpeg_component_descriptor (jpeg_component_descriptor_t *descriptor,
+                                     size_t scan_component_index,
+                                     jpeg_context_t *ctx);
+jpeg_error_t jpeg_process_buffer (jpeg_block_buffer_t *buffer,
+                                  jpeg_context_t *ctx,
+                                  jpeg_bitstream_t *bitstream);
+jpeg_error_t jpeg_install_mcu (jpeg_context_t *ctx, size_t bx, size_t by,
+                               size_t x, size_t y);
 void make_tga (const uint8_t *data, size_t width, size_t height,
                const char *path);
 
@@ -79,6 +87,13 @@ jpeg_init ()
   ctx->scans_capacity = 0;
   ctx->scans_count = 0;
 
+  // Buffers
+  ctx->n_buffers = 0;
+  ctx->mcu_buffers = NULL;
+
+  // RGB
+  ctx->rgb = NULL;
+
   // TODO : Continue
 
   return ctx;
@@ -133,6 +148,12 @@ jpeg_free_context (jpeg_context_t *jpeg_context)
       h_clear_tree (jpeg_context->huffman_tree_dc[i]);
       h_clear_tree (jpeg_context->huffman_tree_ac[i]);
     }
+
+  if (jpeg_context->mcu_buffers != NULL)
+    free (jpeg_context->mcu_buffers);
+
+  if (jpeg_context->rgb != NULL)
+    free (jpeg_context->rgb);
 
   // TODO : Continue
 
@@ -209,24 +230,150 @@ jpeg_decoding (jpeg_context_t *jpeg_context, jpeg_header_t *header,
       return JPEG_ERROR_HUFFMAN;
     }
 
-  // DeHuffman
-  int DCT_Y0[64];
-  int DCT_Y1[64];
-  int DCT_Cb[64];
-  int DCT_Cr[64];
+  // Create image
+  jpeg_context->rgb = (uint8_t *)malloc (jpeg_context->header.width
+                                         * jpeg_context->header.height * 3);
+  if (jpeg_context->rgb == NULL)
+    {
+      JPEG_LOG ("[E] Can not allocate memory\n");
+      return JPEG_ERROR_MALLOC;
+    }
 
-  int Y0[64];
-  int Y1[64];
-  int Cb[64];
-  int Cr[64];
+  // Get number of blocks in MCU
+  size_t n = 0;
+  size_t hs = 0;
+  size_t vs = 0;
 
-  uint8_t RGB[384];
-  uint8_t rle, cat;
+  for (int i = 0; i < jpeg_context->header.n_component; i++)
+    {
+      n += SAMPLING_H (jpeg_context->header.components[i].sampling)
+           * SAMPLING_V (jpeg_context->header.components[i].sampling);
+      if (SAMPLING_H (jpeg_context->header.components[i].sampling) > hs)
+        hs = SAMPLING_H (jpeg_context->header.components[i].sampling);
+      if (SAMPLING_V (jpeg_context->header.components[i].sampling) > vs)
+        vs = SAMPLING_V (jpeg_context->header.components[i].sampling);
+    }
+  jpeg_context->n_buffers = n;
+  jpeg_context->mcu_buffers
+      = (jpeg_block_buffer_t *)malloc (sizeof (jpeg_block_buffer_t) * n);
+  if (jpeg_context->mcu_buffers == NULL)
+    {
+      JPEG_LOG ("[E] Can not allocate memory\n");
+      return JPEG_ERROR_MALLOC;
+    }
 
-  // Y0
-  DEBUG_LOG ("[D] Y0\n");
-  memset (DCT_Y0, 0, sizeof (int) * 64);
-  node = jpeg_context->huffman_tree_dc[SOS_AC(jpeg_context->scans[0].components[0].scan_destination)];
+  // Filling blocks
+  n = 0;
+  for (int i = 0; i < jpeg_context->header.n_component; i++)
+    {
+      for (int k = 0;
+           k < SAMPLING_V (jpeg_context->header.components[i].sampling); k++)
+        {
+          for (int j = 0;
+               j < SAMPLING_H (jpeg_context->header.components[i].sampling);
+               j++)
+            {
+              make_jpeg_component_descriptor (
+                  &(jpeg_context->mcu_buffers[n].descriptor), i, jpeg_context);
+              n++;
+            }
+        }
+    }
+
+  size_t nx = (jpeg_context->header.width + hs * 8 - 1) / (hs * 8);
+  size_t ny = (jpeg_context->header.height + vs * 8 - 1) / (vs * 8);
+  jpeg_error_t err;
+
+  for (int j = 0; j < ny; j++)
+    {
+      for (int i = 0; i < nx; i++)
+        {
+          // DEBUG_LOG ("[D] Decoding MCU[%i, %i]\n", i, j);
+          for (int k = 0; k < jpeg_context->n_buffers; k++)
+            {
+              // DEBUG_LOG (
+              //     "[D] Decoding component %hhu\n",
+              //     jpeg_context->mcu_buffers[k].descriptor.component_index);
+              err = jpeg_process_buffer (jpeg_context->mcu_buffers + k,
+                                         jpeg_context, bitstream);
+
+              if (err != JPEG_NO_ERROR)
+                {
+                  JPEG_LOG ("[E] Error while decoding MCU[%i, %i]\n", i, j);
+                  return err;
+                }
+            }
+          jpeg_install_mcu (jpeg_context, hs, vs, i * hs * 8, j * vs * 8);
+        }
+    }
+
+  make_tga (jpeg_context->rgb, jpeg_context->header.width,
+            jpeg_context->header.height, "result.tga");
+
+  return JPEG_NO_ERROR;
+}
+
+/* ********************* make_jpeg_component_descriptor ******************** */
+
+bool
+make_jpeg_component_descriptor (jpeg_component_descriptor_t *descriptor,
+                                size_t scan_component_index,
+                                jpeg_context_t *ctx)
+{
+  // TODO : multiple scans
+
+  header_component_descriptor_t *hdr_descriptor = NULL;
+
+  descriptor->component_index
+      = ctx->scans[0].components[scan_component_index].component_selector;
+  descriptor->h_dc_table_index = SOS_DC (
+      ctx->scans[0].components[scan_component_index].scan_destination);
+  descriptor->h_ac_table_index = SOS_AC (
+      ctx->scans[0].components[scan_component_index].scan_destination);
+
+  for (int i = 0; i < ctx->header.n_component; i++)
+    {
+      if (ctx->header.components[i].component_id
+          == descriptor->component_index)
+        {
+          hdr_descriptor = ctx->header.components + i;
+          break;
+        }
+    }
+
+  if (hdr_descriptor == NULL)
+    return false;
+
+  descriptor->q_table_index = hdr_descriptor->dqt_destination;
+  descriptor->h_number = SAMPLING_H (hdr_descriptor->sampling);
+  descriptor->v_number = SAMPLING_V (hdr_descriptor->sampling);
+
+  return true;
+}
+
+/* ************************** jpeg_process_buffer ************************** */
+
+jpeg_error_t
+jpeg_process_buffer (jpeg_block_buffer_t *buffer, jpeg_context_t *ctx,
+                     jpeg_bitstream_t *bitstream)
+{
+  huffman_node_t *node;
+  uint32_t val;
+  uint8_t cat;
+  uint8_t rle;
+  size_t index;
+
+  for (index = 0; index < ctx->header.n_component; index++)
+    {
+      if (ctx->header.components[index].component_id
+          == buffer->descriptor.component_index)
+        break;
+    }
+
+  memset (buffer->dct_data, 0, sizeof (int) * 64);
+  // DEBUG_LOG ("[D] Extract data for #%hhu\n",
+  //            buffer->descriptor.component_index);
+  node = ctx->huffman_tree_dc[buffer->descriptor.h_dc_table_index];
   while (true)
     {
       node = h_move (node, bitstream_next_bit (bitstream));
@@ -238,15 +385,25 @@ jpeg_decoding (jpeg_context_t *jpeg_context, jpeg_header_t *header,
       else if (h_is_leaf (node))
         {
           val = bitstream_extract (bitstream, node->value);
-          DCT_Y0[dezigzaging (0)] = make_from_huffman (val, node->value)
-                                    * jpeg_context->dqt[0].table[0];
+          if (val == BITSTREAM_EOS)
+            {
+              JPEG_LOG ("[E] Huffman error in bitstream\n");
+              return JPEG_ERROR_HUFFMAN;
+            }
+          // FIXME : Not an index - 1 but search for DC cache in header
+          buffer->dct_data[dezigzaging (0)]
+              = ctx->header.components[buffer->descriptor.component_index - 1]
+                    .dc_cache
+                + make_from_huffman (val, node->value)
+                      * ctx->dqt[buffer->descriptor.q_table_index].table[0];
+          ctx->header.components[index].dc_cache = buffer->dct_data[0];
           break;
         }
     }
 
   for (int i = 1; i < 64; i++)
     {
-      node = jpeg_context->huffman_tree_ac[0];
+      node = ctx->huffman_tree_ac[buffer->descriptor.h_ac_table_index];
       while (true)
         {
           node = h_move (node, bitstream_next_bit (bitstream));
@@ -279,314 +436,113 @@ jpeg_decoding (jpeg_context_t *jpeg_context, jpeg_header_t *header,
                   if (i >= 64)
                     break;
                   val = bitstream_extract (bitstream, cat);
-                  DCT_Y0[dezigzaging (i)] = make_from_huffman (val, cat)
-                                            * jpeg_context->dqt[0].table[i];
-                }
-              break;
-            }
-        }
-    }
-
-  idct (Y0, DCT_Y0);
-
-  for (int j = 0; j < 8; j++)
-    {
-      DEBUG_LOG ("[D] ");
-      for (int i = 0; i < 8; i++)
-        {
-          DEBUG_LOG ("%04i", DCT_Y0[j * 8 + i]);
-          if (i == 7)
-            {
-              DEBUG_LOG ("\n");
-            }
-          else
-            {
-              DEBUG_LOG (" ");
-            }
-        }
-    }
-
-  // Y1
-  memset (DCT_Y1, 0, sizeof (int) * 64);
-  DEBUG_LOG ("[D] Y1\n");
-  node = jpeg_context->huffman_tree_dc[0];
-  while (true)
-    {
-      node = h_move (node, bitstream_next_bit (bitstream));
-      if (node == NULL)
-        {
-          JPEG_LOG ("[E] Huffman error in bitstream\n");
-          return JPEG_ERROR_HUFFMAN;
-        }
-      else if (h_is_leaf (node))
-        {
-          val = bitstream_extract (bitstream, node->value);
-          DCT_Y1[dezigzaging (0)] = make_from_huffman (val, node->value)
-                                        * jpeg_context->dqt[0].table[0]
-                                    + DCT_Y0[dezigzaging (0)];
-          break;
-        }
-    }
-
-  for (int i = 1; i < 64; i++)
-    {
-      node = jpeg_context->huffman_tree_ac[0];
-      while (true)
-        {
-          node = h_move (node, bitstream_next_bit (bitstream));
-          if (node == NULL)
-            {
-              JPEG_LOG ("[E] Huffman error in bitstream\n");
-              return JPEG_ERROR_HUFFMAN;
-            }
-          else if (h_is_leaf (node))
-            {
-              cat = node->value;
-              rle = H_RLE (cat);
-              cat = H_CATEGORY (cat);
-              if (cat == 0)
-                {
-                  if (rle == 15)
-                    {
-                      i += 16;
-                      break;
-                    }
-                  else
-                    {
-                      i = 64;
-                      break;
-                    }
-                }
-              else
-                {
-                  i += rle;
-                  if (i >= 64)
-                    break;
-                  val = bitstream_extract (bitstream, cat);
-                  DCT_Y1[dezigzaging (i)] = make_from_huffman (val, cat)
-                                            * jpeg_context->dqt[0].table[i];
+                  buffer->dct_data[dezigzaging (i)]
+                      = make_from_huffman (val, cat)
+                        * ctx->dqt[buffer->descriptor.q_table_index].table[i];
                   break;
                 }
             }
         }
     }
 
-  idct (Y1, DCT_Y1);
+  idct (buffer->data, buffer->dct_data);
 
-  for (int j = 0; j < 8; j++)
+  // DEBUG_LOG ("[D] Val component #%hhu\n",
+  // buffer->descriptor.component_index); for (int j = 0; j < 8; j++)
+  //   {
+  //     DEBUG_LOG (" ");
+  //     for (int i = 0; i < 8; i++)
+  //       {
+  //         DEBUG_LOG ("%04i", buffer->dct_data[j * 8 + i]);
+  //         if (i == 7)
+  //           {
+  //             DEBUG_LOG ("\n");
+  //           }
+  //         else
+  //           {
+  //             DEBUG_LOG (" ");
+  //           }
+  //       }
+  //   }
+
+  return JPEG_NO_ERROR;
+}
+
+/* **************************** jpeg_install_mcu *************************** */
+
+jpeg_error_t
+jpeg_install_mcu (jpeg_context_t *ctx, size_t bx, size_t by, size_t x,
+                  size_t y)
+{
+  const size_t Yx = SAMPLING_H (ctx->header.components[0].sampling);
+  const size_t Yy = SAMPLING_V (ctx->header.components[0].sampling);
+  const size_t Ys = Yx * Yy;
+  const size_t Cbx = SAMPLING_H (ctx->header.components[1].sampling);
+  const size_t Cby = SAMPLING_V (ctx->header.components[1].sampling);
+  const size_t Cbs = Cbx * Cby;
+  const size_t Crx = SAMPLING_H (ctx->header.components[2].sampling);
+  const size_t Cry = SAMPLING_V (ctx->header.components[2].sampling);
+  const size_t Crs = Crx * Cry;
+
+  size_t Yn;
+  size_t Cbn;
+  size_t Crn;
+
+  int Y;
+  int Cb;
+  int Cr;
+
+  int yi, yj;
+  int cbi, cbj;
+  int cri, crj;
+
+  DEBUG_LOG ("[D] jpeg_install_mcu (%p, %zi, %zi, %zi, %zi)\n", ctx, bx, by, x,
+             y);
+
+  for (int j = 0; j < 8 * by; j++)
     {
-      DEBUG_LOG ("[D] ");
-      for (int i = 0; i < 8; i++)
+      for (int i = 0; i < 8 * bx; i++)
         {
-          DEBUG_LOG ("%04i", DCT_Y1[j * 8 + i]);
-          if (i == 7)
+          if ((x + i < ctx->header.width) && ((y + j < ctx->header.height)))
             {
-              DEBUG_LOG ("\n");
-            }
-          else
-            {
-              DEBUG_LOG (" ");
+              Yn = ((j / 8) * Yx + i / 8) % Ys;
+              Cbn = ((j / 8) * Cbx + i / 8) % Cbs;
+              Crn = ((j / 8) * Crx + i / 8) % Crs;
+
+              yi = (Yx * i / bx) % 8;
+              yj = (Yy * j / by) % 8;
+              cbi = (Cbx * i / bx) % 8;
+              cbj = (Cby * j / by) % 8;
+              cri = (Crx * i / bx) % 8;
+              crj = (Cry * j / by) % 8;
+
+              // DEBUG_LOG ("[D] Put pixel at (%i, %i). Y[%i](%i,%i), "
+              //            "Cb[%i](%i,%i), "
+              //            "Cr[%i](%i,%i)\n",
+              //            (int)(x + i), (int)(y + j), (int)Yn, (int)(yi),
+              //            (int)(yj), (int)Cbn, (int)(cbi), (int)(cbj),
+              //            (int)Crn, (int)(cri), (int)(crj));
+
+              Y = ctx->mcu_buffers[Yn].data[yj * 8 + yi];
+              Cb = ctx->mcu_buffers[Ys + Cbn].data[cbj * 8 + cbi];
+              Cr = ctx->mcu_buffers[Ys + Cbs + Crn].data[crj * 8 + cri];
+              // Y = Cb;
+              Cb = 128;
+              Cr = 128;
+
+              ctx->rgb[((y + j) * ctx->header.width + i + x) * 3]
+                  = clampi (Y + (1.402f * (Cr - 128)), 0, 255);
+              ctx->rgb[((y + j) * ctx->header.width + i + x) * 3 + 1]
+                  = clampi (Y - (0.34414f * (Cb - 128))
+                                - (0.71414f * (Cr - 128)),
+                            0, 255);
+              ctx->rgb[((y + j) * ctx->header.width + i + x) * 3 + 2]
+                  = clampi (Y + (1.772f * (Cb - 128)), 0, 255);
             }
         }
     }
 
-  // Cb
-  memset (DCT_Cb, 0, sizeof (int) * 64);
-  DEBUG_LOG ("[D] DCT Cb0\n");
-  node = jpeg_context->huffman_tree_dc[1];
-  while (true)
-    {
-      node = h_move (node, bitstream_next_bit (bitstream));
-      if (node == NULL)
-        {
-          JPEG_LOG ("[E] Huffman error in bitstream\n");
-          return JPEG_ERROR_HUFFMAN;
-        }
-      else if (h_is_leaf (node))
-        {
-          val = bitstream_extract (bitstream, node->value);
-          DCT_Cb[dezigzaging (0)] = make_from_huffman (val, node->value)
-                                    * jpeg_context->dqt[1].table[0];
-          break;
-        }
-    }
-
-  for (int i = 1; i < 64; i++)
-    {
-      node = jpeg_context->huffman_tree_ac[1];
-      while (true)
-        {
-          node = h_move (node, bitstream_next_bit (bitstream));
-          if (node == NULL)
-            {
-              JPEG_LOG ("[E] Huffman error in bitstream\n");
-              return JPEG_ERROR_HUFFMAN;
-            }
-          else if (h_is_leaf (node))
-            {
-              cat = node->value;
-              rle = H_RLE (cat);
-              cat = H_CATEGORY (cat);
-              if (cat == 0)
-                {
-                  if (rle == 15)
-                    {
-                      i += 16;
-                      break;
-                    }
-                  else
-                    {
-                      i = 64;
-                      break;
-                    }
-                }
-              else
-                {
-                  i += rle;
-                  if (i >= 64)
-                    break;
-                  val = bitstream_extract (bitstream, cat);
-                  DCT_Cb[dezigzaging (i)] = make_from_huffman (val, cat)
-                                            * jpeg_context->dqt[1].table[i];
-                  break;
-                }
-            }
-        }
-    }
-
-  idct (Cb, DCT_Cb);
-
-  for (int j = 0; j < 8; j++)
-    {
-      DEBUG_LOG ("[D] ");
-      for (int i = 0; i < 8; i++)
-        {
-          DEBUG_LOG ("%04i", DCT_Cb[j * 8 + i]);
-          if (i == 7)
-            {
-              DEBUG_LOG ("\n");
-            }
-          else
-            {
-              DEBUG_LOG (" ");
-            }
-        }
-    }
-
-  // Cr
-  memset (DCT_Cr, 0, sizeof (int) * 64);
-  DEBUG_LOG ("[D] DCT Cr0\n");
-  node = jpeg_context->huffman_tree_dc[1];
-  while (true)
-    {
-      node = h_move (node, bitstream_next_bit (bitstream));
-      if (node == NULL)
-        {
-          JPEG_LOG ("[E] Huffman error in bitstream\n");
-          return JPEG_ERROR_HUFFMAN;
-        }
-      else if (h_is_leaf (node))
-        {
-          val = bitstream_extract (bitstream, node->value);
-          DCT_Cr[dezigzaging (0)] = make_from_huffman (val, node->value)
-                                    * jpeg_context->dqt[1].table[0];
-          break;
-        }
-    }
-
-  for (int i = 1; i < 64; i++)
-    {
-      node = jpeg_context->huffman_tree_ac[1];
-      while (true)
-        {
-          node = h_move (node, bitstream_next_bit (bitstream));
-          if (node == NULL)
-            {
-              JPEG_LOG ("[E] Huffman error in bitstream\n");
-              return JPEG_ERROR_HUFFMAN;
-            }
-          else if (h_is_leaf (node))
-            {
-              cat = node->value;
-              rle = H_RLE (cat);
-              cat = H_CATEGORY (cat);
-              if (cat == 0)
-                {
-                  if (rle == 15)
-                    {
-                      i += 16;
-                      break;
-                    }
-                  else
-                    {
-                      i = 64;
-                      break;
-                    }
-                }
-              else
-                {
-                  i += rle;
-                  if (i >= 64)
-                    break;
-                  val = bitstream_extract (bitstream, cat);
-                  DCT_Cr[dezigzaging (i)] = make_from_huffman (val, cat)
-                                            * jpeg_context->dqt[1].table[i];
-                  break;
-                }
-            }
-        }
-    }
-
-  idct (Cr, DCT_Cr);
-
-  for (int j = 0; j < 8; j++)
-    {
-      DEBUG_LOG ("[D] ");
-      for (int i = 0; i < 8; i++)
-        {
-          DEBUG_LOG ("%04i", DCT_Cr[j * 8 + i]);
-          if (i == 7)
-            {
-              DEBUG_LOG ("\n");
-            }
-          else
-            {
-              DEBUG_LOG (" ");
-            }
-        }
-    }
-
-  for (int j = 0; j < 8; j++)
-    {
-      for (int i = 0; i < 8; i++)
-        {
-          RGB[(j * 16 + i) * 3] = clampi (
-              Y0[j * 8 + i] + (1.402f * (Cr[j * 8 + i / 2] - 128)), 0, 255);
-          RGB[(j * 16 + i + 8) * 3] = clampi (
-              Y1[j * 8 + i] + (1.402f * (Cr[j * 8 + i / 2 + 4] - 128)), 0,
-              255);
-
-          RGB[(j * 16 + i) * 3 + 1]
-              = clampi (Y0[j * 8 + i] - (0.34414 * (Cb[j * 8 + i / 2] - 128))
-                            - (0.71414 * (Cr[j * 8 + i / 2] - 128)),
-                        0, 255);
-          RGB[(j * 16 + i + 8) * 3 + 1] = clampi (
-              Y1[j * 8 + i] - (0.34414 * (Cb[j * 8 + i / 2 + 4] - 128))
-                  - (0.71414 * (Cr[j * 8 + i / 2 + 4] - 128)),
-              0, 255);
-
-          RGB[(j * 16 + i) * 3 + 2] = clampi (
-              Y0[j * 8 + i] + (1.772 * (Cb[j * 8 + i / 2] - 128)), 0, 255);
-          RGB[(j * 16 + i + 8) * 3 + 2] = clampi (
-              Y1[j * 8 + i] + (1.772 * (Cb[j * 8 + i / 2 + 4] - 128)), 0, 255);
-        }
-    }
-
-  make_tga (RGB, 16, 8, "result.tga");
-
-  // TODO : Continue
-
-  return JPEG_ERROR_NOT_SUPPORTED;
+  return JPEG_NO_ERROR;
 }
 
 /* ******************************** make_tga ******************************* */

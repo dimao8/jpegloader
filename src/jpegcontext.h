@@ -114,6 +114,23 @@ typedef struct jpeg_number_lines_tag
   uint16_t n_lines; /// Number of lines
 } jpeg_number_lines_t;
 
+typedef struct jpeg_component_descriptor_tag
+{
+  uint8_t component_index;
+  uint8_t h_dc_table_index;
+  uint8_t h_ac_table_index;
+  uint8_t q_table_index;
+  uint8_t h_number;
+  uint8_t v_number;
+} jpeg_component_descriptor_t;
+
+typedef struct jpeg_block_buffer_tag
+{
+  int dct_data[64];
+  int data[64];
+  jpeg_component_descriptor_t descriptor;
+} jpeg_block_buffer_t;
+
 /**
  * \brief JPEG state context
  */
@@ -130,6 +147,9 @@ typedef struct jpeg_context_tag
   size_t scans_capacity;              /// Memory for scans
   size_t scans_count;                 /// Number of scans
   jpeg_scan_header_t *scans;          /// Scan table
+  size_t n_buffers;                   /// Number of buffers in MCU
+  jpeg_block_buffer_t *mcu_buffers;   /// JPEG decoder MCU buffer
+  uint8_t *rgb;
 } jpeg_context_t;
 
 #endif // JPEGCONTEXT_H

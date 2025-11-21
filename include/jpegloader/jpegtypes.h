@@ -15,6 +15,7 @@
  */
 typedef struct header_component_descriptor_tag
 {
+  int dc_cache;            /// DC Huffman cache
   uint8_t component_id;    /// Component identifier
   uint8_t sampling;        /// Sampling factor
   uint8_t dqt_destination; /// Quantization table destination selector
