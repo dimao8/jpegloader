@@ -1,8 +1,9 @@
 #include "bitstream.h"
 #include "jpegfunc.h"
-#include "jpeglog.h"
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 /**
@@ -15,6 +16,22 @@ typedef struct jpeg_bitstream_tag
   size_t byte_pos;
   size_t bit_offset;
 } jpeg_bitstream_t;
+
+/* ******************************* print_bits ****************************** */
+
+void
+print_bits (FILE *where, uint32_t value, size_t sz)
+{
+  sz = clampi (sz, 0, 32);
+
+  uint32_t mask = (1 << (sz - 1));
+
+  for (int i = 0; i < sz; i++)
+    {
+      fputc (((value & mask) == 0) ? '0' : '1', where);
+      value <<= 1;
+    }
+}
 
 /* **************************** bitstream_create *************************** */
 
@@ -118,34 +135,54 @@ bitstream_next_bit (jpeg_bitstream_t *stream)
 /* ********************** bitstream_print_near_current ********************* */
 
 void
-bitstream_print_near_current (jpeg_bitstream_t *stream)
+bitstream_print_state (FILE *where, jpeg_bitstream_t *stream)
 {
   if (stream == NULL)
     {
-      DEBUG_LOG ("[D] stream is NULL\n");
+      fprintf (where, "stream is NULL\n");
       return;
     }
 
-  if (stream->byte_length == 0)
+  fprintf (where, "stream->byte_length: %zi\n", stream->byte_length);
+  fprintf (where, "stream->byte_pos: %zi\n", stream->byte_pos);
+  fprintf (where, "stream->bit_offset: %zi\n", stream->bit_offset);
+
+  if (stream->byte_pos == stream->byte_length)
     {
-      DEBUG_LOG ("[D] stream is empty\n");
+      fprintf (where, "OUT OF STREAM\n");
       return;
     }
 
-  DEBUG_LOG ("[D] stream near [%zi]: ", stream->byte_pos);
-  int start = clampi (stream->byte_pos - 2, 0, stream->byte_pos);
-  int end
-      = clampi (stream->byte_pos + 2, stream->byte_pos, stream->byte_length);
-  for (int i = start; i < end; i++)
+  if (stream->byte_pos == 0)
     {
-      DEBUG_LOG ("0x%02hhx", stream->bytes[i]);
-      if (i != end - 1)
-        {
-          DEBUG_LOG (" ");
-        }
-      else
-        {
-          DEBUG_LOG ("\n");
-        }
+      print_bits (where, stream->bytes[0], 8);
+      fputc (' ', where);
+      print_bits (where, stream->bytes[1], 8);
+      fputc ('\n', where);
+      for (int i = 0; i < stream->bit_offset; i++)
+        fputc ('-', where);
+      fprintf (where, "^\n");
+    }
+  else if (stream->byte_pos == stream->byte_length - 1)
+    {
+      print_bits (where, stream->bytes[stream->byte_length - 2], 8);
+      fputc (' ', where);
+      print_bits (where, stream->bytes[stream->byte_length - 1], 8);
+      fputc ('\n', where);
+      for (int i = 0; i < stream->bit_offset + 9; i++)
+        fputc ('-', where);
+      fprintf (where, "^\n");
+    }
+  else
+    {
+      print_bits (where, stream->bytes[stream->byte_pos - 1], 8);
+      fputc (' ', where);
+      print_bits (where, stream->bytes[stream->byte_pos], 8);
+      fputc (' ', where);
+      print_bits (where, stream->bytes[stream->byte_pos + 1], 8);
+      fputc ('\n', where);
+      for (int i = 0; i < stream->bit_offset + 9; i++)
+        fputc ('-', where);
+      fprintf (where, "^\n");
     }
 }

@@ -143,7 +143,9 @@ jpeg_sos_extract (jpeg_context_t *context, const uint8_t *stream,
             {
               i++;
               if (stream[*pos + i] == 0) // 0xFF escape
-                sz++;
+                {
+                  sz++;
+                }
               else // Marker
                 break;
             }
@@ -153,7 +155,6 @@ jpeg_sos_extract (jpeg_context_t *context, const uint8_t *stream,
     }
 
   context->scans[context->scans_count].scan_data = NULL;
-  DEBUG_LOG ("[D] Scan size is %u\n", (unsigned int)sz);
   context->scans[context->scans_count].scan_length = sz;
   context->scans[context->scans_count].scan_data
       = (uint8_t *)malloc (context->scans[context->scans_count].scan_length);

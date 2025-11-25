@@ -87,6 +87,9 @@ jpeg_init ()
   ctx->scans_capacity = 0;
   ctx->scans_count = 0;
 
+  // Comment
+  ctx->comment = NULL;
+
   // Buffers
   ctx->n_buffers = 0;
   ctx->mcu_buffers = NULL;
@@ -143,6 +146,9 @@ jpeg_free_context (jpeg_context_t *jpeg_context)
       jpeg_context->scans_count = 0;
     }
 
+  if (jpeg_context->comment != NULL)
+    free (jpeg_context->comment);
+
   for (int i = 0; i < 4; i++)
     {
       h_clear_tree (jpeg_context->huffman_tree_dc[i]);
@@ -165,7 +171,11 @@ jpeg_free_context (jpeg_context_t *jpeg_context)
 int
 make_from_huffman (uint16_t value, size_t length)
 {
-  const int mask = (1 << (length - 1));
+  const uint16_t mask = (1 << (length - 1));
+
+  if (length == 0)
+    return 0;
+
   if (value & mask)
     return value;
   else
@@ -192,16 +202,10 @@ jpeg_decoding (jpeg_context_t *jpeg_context, jpeg_header_t *header,
               JPEG_LOG ("[E] Huffman error in DC #%i\n", i);
               return JPEG_ERROR_HUFFMAN;
             }
-          // DEBUG_LOG ("[D] Huffman DC #%i tree\n", i);
-          // h_print_node (stdout, node, 2);
 
           jpeg_context->huffman_tree_dc[i] = node;
         }
-
-      // h_print_node (stdout, node, 0);
     }
-
-  // h_print_node (stdout, jpeg_context->huffman_tree_dc[1]);
 
   // Create AC Huffman trees
   for (int i = 0; i < 4; i++)
@@ -218,8 +222,6 @@ jpeg_decoding (jpeg_context_t *jpeg_context, jpeg_header_t *header,
           jpeg_context->huffman_tree_ac[i] = node;
         }
     }
-
-  // h_print_node (stdout, jpeg_context->huffman_tree_dc[0]);
 
   // Create JPEG data bitstream
   jpeg_bitstream_t *bitstream = bitstream_create (
@@ -288,12 +290,8 @@ jpeg_decoding (jpeg_context_t *jpeg_context, jpeg_header_t *header,
     {
       for (int i = 0; i < nx; i++)
         {
-          // DEBUG_LOG ("[D] Decoding MCU[%i, %i]\n", i, j);
           for (int k = 0; k < jpeg_context->n_buffers; k++)
             {
-              // DEBUG_LOG (
-              //     "[D] Decoding component %hhu\n",
-              //     jpeg_context->mcu_buffers[k].descriptor.component_index);
               err = jpeg_process_buffer (jpeg_context->mcu_buffers + k,
                                          jpeg_context, bitstream);
 
@@ -362,6 +360,7 @@ jpeg_process_buffer (jpeg_block_buffer_t *buffer, jpeg_context_t *ctx,
   uint8_t cat;
   uint8_t rle;
   size_t index;
+  int itmp;
 
   for (index = 0; index < ctx->header.n_component; index++)
     {
@@ -371,15 +370,13 @@ jpeg_process_buffer (jpeg_block_buffer_t *buffer, jpeg_context_t *ctx,
     }
 
   memset (buffer->dct_data, 0, sizeof (int) * 64);
-  // DEBUG_LOG ("[D] Extract data for #%hhu\n",
-  //            buffer->descriptor.component_index);
   node = ctx->huffman_tree_dc[buffer->descriptor.h_dc_table_index];
   while (true)
     {
       node = h_move (node, bitstream_next_bit (bitstream));
       if (node == NULL)
         {
-          JPEG_LOG ("[E] Huffman error in bitstream\n");
+          JPEG_LOG ("[E] h_move: Huffman error in bitstream\n");
           return JPEG_ERROR_HUFFMAN;
         }
       else if (h_is_leaf (node))
@@ -387,16 +384,19 @@ jpeg_process_buffer (jpeg_block_buffer_t *buffer, jpeg_context_t *ctx,
           val = bitstream_extract (bitstream, node->value);
           if (val == BITSTREAM_EOS)
             {
-              JPEG_LOG ("[E] Huffman error in bitstream\n");
+              JPEG_LOG ("[E] bitstream_extract: Huffman error in bitstream\n");
               return JPEG_ERROR_HUFFMAN;
             }
           // FIXME : Not an index - 1 but search for DC cache in header
+          itmp = make_from_huffman (val, node->value);
+          itmp
+              += ctx->header.components[buffer->descriptor.component_index - 1]
+                     .dc_cache;
           buffer->dct_data[dezigzaging (0)]
-              = ctx->header.components[buffer->descriptor.component_index - 1]
-                    .dc_cache
-                + make_from_huffman (val, node->value)
-                      * ctx->dqt[buffer->descriptor.q_table_index].table[0];
-          ctx->header.components[index].dc_cache = buffer->dct_data[0];
+              = itmp * ctx->dqt[buffer->descriptor.q_table_index].table[0];
+          ctx->header.components[buffer->descriptor.component_index - 1]
+              .dc_cache
+              = itmp;
           break;
         }
     }
@@ -409,7 +409,7 @@ jpeg_process_buffer (jpeg_block_buffer_t *buffer, jpeg_context_t *ctx,
           node = h_move (node, bitstream_next_bit (bitstream));
           if (node == NULL)
             {
-              JPEG_LOG ("[E] Huffman error in bitstream\n");
+              JPEG_LOG ("[E] h_move: Huffman error in bitstream\n");
               return JPEG_ERROR_HUFFMAN;
             }
           else if (h_is_leaf (node))
@@ -421,13 +421,19 @@ jpeg_process_buffer (jpeg_block_buffer_t *buffer, jpeg_context_t *ctx,
                 {
                   if (rle == 15)
                     {
-                      i += 16;
+                      i += 15;
+                      break;
+                    }
+                  else if (rle == 0)
+                    {
+                      i = 64;
                       break;
                     }
                   else
                     {
-                      i = 64;
-                      break;
+                      JPEG_LOG (
+                          "[E] Wrong RLE/Category pair in Huffman table\n");
+                      return JPEG_ERROR_FILE_NOT_JPEG;
                     }
                 }
               else
@@ -446,24 +452,6 @@ jpeg_process_buffer (jpeg_block_buffer_t *buffer, jpeg_context_t *ctx,
     }
 
   idct (buffer->data, buffer->dct_data);
-
-  // DEBUG_LOG ("[D] Val component #%hhu\n",
-  // buffer->descriptor.component_index); for (int j = 0; j < 8; j++)
-  //   {
-  //     DEBUG_LOG (" ");
-  //     for (int i = 0; i < 8; i++)
-  //       {
-  //         DEBUG_LOG ("%04i", buffer->dct_data[j * 8 + i]);
-  //         if (i == 7)
-  //           {
-  //             DEBUG_LOG ("\n");
-  //           }
-  //         else
-  //           {
-  //             DEBUG_LOG (" ");
-  //           }
-  //       }
-  //   }
 
   return JPEG_NO_ERROR;
 }
@@ -496,9 +484,6 @@ jpeg_install_mcu (jpeg_context_t *ctx, size_t bx, size_t by, size_t x,
   int cbi, cbj;
   int cri, crj;
 
-  DEBUG_LOG ("[D] jpeg_install_mcu (%p, %zi, %zi, %zi, %zi)\n", ctx, bx, by, x,
-             y);
-
   for (int j = 0; j < 8 * by; j++)
     {
       for (int i = 0; i < 8 * bx; i++)
@@ -516,19 +501,9 @@ jpeg_install_mcu (jpeg_context_t *ctx, size_t bx, size_t by, size_t x,
               cri = (Crx * i / bx) % 8;
               crj = (Cry * j / by) % 8;
 
-              // DEBUG_LOG ("[D] Put pixel at (%i, %i). Y[%i](%i,%i), "
-              //            "Cb[%i](%i,%i), "
-              //            "Cr[%i](%i,%i)\n",
-              //            (int)(x + i), (int)(y + j), (int)Yn, (int)(yi),
-              //            (int)(yj), (int)Cbn, (int)(cbi), (int)(cbj),
-              //            (int)Crn, (int)(cri), (int)(crj));
-
               Y = ctx->mcu_buffers[Yn].data[yj * 8 + yi];
               Cb = ctx->mcu_buffers[Ys + Cbn].data[cbj * 8 + cbi];
               Cr = ctx->mcu_buffers[Ys + Cbs + Crn].data[crj * 8 + cri];
-              // Y = Cb;
-              Cb = 128;
-              Cr = 128;
 
               ctx->rgb[((y + j) * ctx->header.width + i + x) * 3]
                   = clampi (Y + (1.402f * (Cr - 128)), 0, 255);

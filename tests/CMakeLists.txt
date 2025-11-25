@@ -17,7 +17,7 @@ target_link_libraries(
 # t_test
 add_test(
   NAME t_test
-  COMMAND $<TARGET_FILE:test> ${TESTS_SRC_DIR}/lenna.jpg
+  COMMAND $<TARGET_FILE:test> ${TESTS_SRC_DIR}/33.jpg
   WORKING_DIRECTORY ${TESTS_BIN_DIR}
 )
 

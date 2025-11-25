@@ -15,6 +15,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /**
  * Bit stream End of Stream value
@@ -62,6 +63,6 @@ uint32_t bitstream_extract (jpeg_bitstream_t *stream, size_t length);
  */
 uint32_t bitstream_next_bit (jpeg_bitstream_t *stream);
 
-void bitstream_print_near_current (jpeg_bitstream_t *stream);
+void bitstream_print_state (FILE* where, jpeg_bitstream_t *stream);
 
 #endif // BITSTREAM_H

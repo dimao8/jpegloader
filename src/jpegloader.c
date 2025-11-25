@@ -2,8 +2,10 @@
 
 #include "jpegapp.h"
 #include "jpegcontext.h"
+#include "jpegcom.h"
 #include "jpegdht.h"
 #include "jpegdqt.h"
+#include "jpegfunc.h"
 #include "jpegloader/jpegtypes.h"
 #include "jpeglog.h"
 #include "jpegparser.h"
@@ -187,10 +189,12 @@ jpeg_load_from_stream (const uint8_t *stream, size_t size,
 
         case COM: // COM
           DEBUG_LOG ("[D] jpegloader: COM found\n");
-          // jpeg_com_extract (context, stream, size, &pos);
-          DEBUG_LOG ("[D] jpegloader: Not realised yet\n");
-          jpeg_free_context (context);
-          return JPEG_ERROR_NOT_SUPPORTED;
+          if (!jpeg_com_extract (context, stream, size, &pos))
+            {
+              JPEG_LOG ("[E] jpegloader: COM parse error\n");
+              jpeg_free_context (context);
+              return JPEG_ERROR_FILE_NOT_JPEG;
+            }
           break;
 
         case DAC: // DAC
@@ -518,30 +522,6 @@ jpeg_load_from_stream (const uint8_t *stream, size_t size,
           DEBUG_LOG ("[D] jpegloader: DHT%i.Th = %hhi\n", (int)size_tmp,
                      DHT_DESTINATION (context->dht_dc[n].class_dest));
           size_tmp++;
-          DEBUG_LOG ("[D] jpegloader: DHT DC #%zi\n", n);
-          for (int i = 0; i < 16; i++)
-            {
-              DEBUG_LOG ("  (%hhu) ", context->dht_dc[n].lengths[i]);
-              if (context->dht_dc[n].lengths[i] == 0)
-                {
-                  DEBUG_LOG ("\n");
-                }
-              else
-                {
-                  for (int j = 0; j < context->dht_dc[n].lengths[i]; j++)
-                    {
-                      DEBUG_LOG ("0x%02hhx", context->dht_dc[n].values[i][j]);
-                      if (j == context->dht_dc[n].lengths[i] - 1)
-                        {
-                          DEBUG_LOG ("\n");
-                        }
-                      else
-                        {
-                          DEBUG_LOG (" ");
-                        }
-                    }
-                }
-            }
         }
     }
   for (size_t n = 0; n < 4; n++)
@@ -560,31 +540,6 @@ jpeg_load_from_stream (const uint8_t *stream, size_t size,
           DEBUG_LOG ("[D] jpegloader: DHT%i.Th = %hhi\n", (int)size_tmp,
                      DHT_DESTINATION (context->dht_ac[n].class_dest));
           size_tmp++;
-
-          DEBUG_LOG ("[D] jpegloader: DHT AC #%zi\n", n);
-          for (int i = 0; i < 16; i++)
-            {
-              DEBUG_LOG ("  (%hhu) ", context->dht_ac[n].lengths[i]);
-              if (context->dht_dc[n].lengths[i] == 0)
-                {
-                  DEBUG_LOG ("\n");
-                }
-              else
-                {
-                  for (int j = 0; j < context->dht_dc[n].lengths[i]; j++)
-                    {
-                      DEBUG_LOG ("0x%02hhx", context->dht_dc[n].values[i][j]);
-                      if (j == context->dht_dc[n].lengths[i] - 1)
-                        {
-                          DEBUG_LOG ("\n");
-                        }
-                      else
-                        {
-                          DEBUG_LOG (" ");
-                        }
-                    }
-                }
-            }
         }
     }
 

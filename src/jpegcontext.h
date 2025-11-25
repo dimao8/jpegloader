@@ -147,9 +147,10 @@ typedef struct jpeg_context_tag
   size_t scans_capacity;              /// Memory for scans
   size_t scans_count;                 /// Number of scans
   jpeg_scan_header_t *scans;          /// Scan table
+  char* comment;                      /// Comment string
   size_t n_buffers;                   /// Number of buffers in MCU
   jpeg_block_buffer_t *mcu_buffers;   /// JPEG decoder MCU buffer
-  uint8_t *rgb;
+  uint8_t *rgb;                       /// Final image
 } jpeg_context_t;
 
 #endif // JPEGCONTEXT_H
