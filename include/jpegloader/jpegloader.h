@@ -1,3 +1,8 @@
+/**
+ * \file
+ * \brief JPEG loader library interface file
+ */
+
 #ifndef JPEGLOADER_H
 #define JPEGLOADER_H
 
@@ -12,19 +17,10 @@ extern "C"
 #define EXPORT
 #endif
 
+#include <jpegloader/jpegtypes.h>
+
 #include <stddef.h>
 #include <stdint.h>
-
-  typedef enum jpeg_error_tag
-  {
-    JPEG_NO_ERROR = 0,
-
-  } jpeg_error_t;
-
-  typedef struct jpeg_header_tag
-  {
-
-  } jpeg_header_t;
 
   /**
    * \brief Load jpeg image form stream
@@ -48,7 +44,14 @@ extern "C"
                                   void **data);
 
   /**
-   * \brief Output jpegloader version
+   * \brief Clear JPEG image data
+   * \param [in, out] data -- Pointer to the buffer from jpeg_load_from_file or
+   * jpeg_load_from_stream
+   */
+  void EXPORT jpeg_free (void **data, jpeg_header_t *header);
+
+  /**
+   * \brief Output jpegloader version in N.N.N.N
    * \param [out] version_string -- Version string buffer
    * \param [in] string_size     -- Size of the buffer (at least 12)
    */

@@ -4,7 +4,9 @@
 // Package name
 #cmakedefine PACKAGE "@PACKAGE@"
 
-// Package name
+// Package version
 #cmakedefine VERSION "@VERSION@"
+
+#cmakedefine WORDS_BIGENDIAN "@WORDS_BIGENDIAN@"
 
 #endif // CONFIG_H
