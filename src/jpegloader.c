@@ -1,11 +1,10 @@
 #include <jpegloader/jpegloader.h>
 
 #include "jpegapp.h"
-#include "jpegcontext.h"
 #include "jpegcom.h"
+#include "jpegcontext.h"
 #include "jpegdht.h"
 #include "jpegdqt.h"
-#include "jpegfunc.h"
 #include "jpegloader/jpegtypes.h"
 #include "jpeglog.h"
 #include "jpegparser.h"
@@ -510,7 +509,7 @@ jpeg_load_from_stream (const uint8_t *stream, size_t size,
     {
       if (DHT_CLASS (context->dht_dc[n].class_dest) != DHT_CLASS_INV)
         {
-          DEBUG_LOG ("[D] jpegloader: DHT%i.Tc = %hhi\n", (int)size_tmp,
+          DEBUG_LOG ("[D] jpegloader: DC DHT%zi.Tc = %hhi\n", n,
                      DHT_CLASS (context->dht_dc[n].class_dest));
           if (DHT_DESTINATION (context->dht_dc[n].class_dest) > 1)
             {
@@ -519,7 +518,7 @@ jpeg_load_from_stream (const uint8_t *stream, size_t size,
               jpeg_free_context (context);
               return JPEG_ERROR_NOT_SUPPORTED;
             }
-          DEBUG_LOG ("[D] jpegloader: DHT%i.Th = %hhi\n", (int)size_tmp,
+          DEBUG_LOG ("[D] jpegloader: DC DHT%zi.Th = %hhi\n", n,
                      DHT_DESTINATION (context->dht_dc[n].class_dest));
           size_tmp++;
         }
@@ -528,7 +527,7 @@ jpeg_load_from_stream (const uint8_t *stream, size_t size,
     {
       if (DHT_CLASS (context->dht_ac[n].class_dest) != DHT_CLASS_INV)
         {
-          DEBUG_LOG ("[D] jpegloader: DHT%i.Tc = %hhi\n", (int)size_tmp,
+          DEBUG_LOG ("[D] jpegloader: AC DHT%zi.Tc = %hhi\n", n,
                      DHT_CLASS (context->dht_ac[n].class_dest));
           if (DHT_DESTINATION (context->dht_ac[n].class_dest) > 1)
             {
@@ -537,12 +536,13 @@ jpeg_load_from_stream (const uint8_t *stream, size_t size,
               jpeg_free_context (context);
               return JPEG_ERROR_NOT_SUPPORTED;
             }
-          DEBUG_LOG ("[D] jpegloader: DHT%i.Th = %hhi\n", (int)size_tmp,
+          DEBUG_LOG ("[D] jpegloader: AC DHT%zi.Th = %hhi\n", n,
                      DHT_DESTINATION (context->dht_ac[n].class_dest));
           size_tmp++;
         }
     }
 
+  uint8_t u8;
   if (context->scans_count != 0)
     {
       for (int i = 0; i < context->scans_count; i++)
@@ -554,25 +554,35 @@ jpeg_load_from_stream (const uint8_t *stream, size_t size,
               DEBUG_LOG ("[D] jpegloader: SOS%i.Cs%i = %hhi\n", i, j,
                          context->scans[i].components[j].component_selector);
 
-              if (SOS_DC (context->scans[i].components[j].scan_destination)
-                  > 1)
+              u8 = SOS_DC (context->scans[i].components[j].scan_destination);
+              if (DHT_DESTINATION (context->dht_dc[u8].class_dest) != u8)
                 {
-                  JPEG_LOG ("[E] jpegloader: only 0 or 1 scan DC destination "
-                            "is supported for Baseline\n");
-                  jpeg_free_context (context);
-                  return JPEG_ERROR_NOT_SUPPORTED;
+                  JPEG_LOG ("[W] jpegloader: SOS%i.Td%i is set to %hhi, but "
+                            "no such DC DHT was found. Copy from DC DHT 0\n",
+                            i, j, u8);
+                  if (!jpeg_dht_copy (context, context->dht_dc, DHT_CLASS_DC,
+                                      u8))
+                    {
+                      JPEG_LOG ("[E] jpegloader: DHT copying failed\n");
+                      return JPEG_ERROR_INIT;
+                    }
                 }
               DEBUG_LOG (
                   "[D] jpegloader: SOS%i.Td%i = %hhi\n", i, j,
                   SOS_DC (context->scans[i].components[j].scan_destination));
 
-              if (SOS_AC (context->scans[i].components[j].scan_destination)
-                  > 1)
+              u8 = SOS_AC (context->scans[i].components[j].scan_destination);
+              if (DHT_DESTINATION (context->dht_ac[u8].class_dest) != u8)
                 {
-                  JPEG_LOG ("[E] jpegloader: only 0 or 1 scan AC destination "
-                            "is supported for Baseline\n");
-                  jpeg_free_context (context);
-                  return JPEG_ERROR_NOT_SUPPORTED;
+                  JPEG_LOG ("[W] jpegloader: SOS%i.Ta%i is set to %hhi, but "
+                            "no such AC DHT was found. Copy from DC DHT 0\n",
+                            i, j, u8);
+                  if (!jpeg_dht_copy (context, context->dht_dc, DHT_CLASS_AC,
+                                      u8))
+                    {
+                      JPEG_LOG ("[E] jpegloader: DHT copying failed\n");
+                      return JPEG_ERROR_INIT;
+                    }
                 }
               DEBUG_LOG (
                   "[D] jpegloader: SOS%i.Ta%i = %hhi\n", i, j,

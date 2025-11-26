@@ -92,8 +92,61 @@ jpeg_dht_extract (jpeg_context_t *context, const uint8_t *stream,
                   dht_table[dest].lengths[i]);
           val_sz += dht_table[dest].lengths[i];
         }
+      else
+        dht_table[dest].values[i] = NULL; // Keep zero length value arrays NULL
     }
 
   *pos += block_sz;
+  return true;
+}
+
+/* ***************************** jpeg_dht_copy ***************************** */
+
+bool
+jpeg_dht_copy (jpeg_context_t *context, const jpeg_dht_t *dht, uint8_t class,
+               uint8_t destination)
+{
+  jpeg_dht_t *dest;
+
+  // Check for args
+  if ((class > 1) || (destination > 3) || (context == NULL) || (dht == NULL))
+    {
+      DEBUG_LOG ("[D] class > 1 or destination > 3 or context is NULL or dht "
+                 "is NULL\n");
+      return false;
+    }
+
+  // Check for copy source to source
+  if ((class == DHT_CLASS (dht->class_dest))
+      && (destination == DHT_DESTINATION (dht->class_dest)))
+    {
+      DEBUG_LOG ("[D] Source and destination are the same\n");
+      return false;
+    }
+
+  // Replace
+  if (class == DHT_CLASS_DC)
+    dest = context->dht_dc + destination;
+  else
+    dest = context->dht_ac + destination;
+
+  for (int i = 0; i < 16; i++)
+    {
+      if (dest->values[i] != NULL)
+        free (dest->values[i]);
+      dest->values[i] = (uint8_t *)malloc (sizeof (uint8_t) * dht->lengths[i]);
+      if (dest->values[i] == NULL)
+        {
+          JPEG_LOG ("[E] Can not allocate memory\n");
+          return false;
+        }
+      memcpy (dest->values[i], dht->values[i],
+              sizeof (uint8_t) * dht->lengths[i]);
+      dest->lengths[i] = dht->lengths[i];
+    }
+
+  dest->class_dest
+      = (destination << DHT_DESTINATION_POS) | (class << DHT_CLASS_POS);
+
   return true;
 }

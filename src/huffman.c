@@ -6,7 +6,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-huffman_node_t *h_make_node (uint8_t length, int value, huffman_node_t *root);
+huffman_node_t *h_make_node (uint8_t length, int value, huffman_node_t *root,
+                             bool *status);
 void h_print (FILE *where, int value, uint8_t length);
 
 /* ************************** h_create_from_codes ************************** */
@@ -15,6 +16,7 @@ huffman_node_t *
 h_create_from_codes (jpeg_dht_t *table)
 {
   huffman_node_t *tree;
+  bool status;
 
   if (table == NULL)
     return NULL;
@@ -34,7 +36,9 @@ h_create_from_codes (jpeg_dht_t *table)
         {
           for (int j = 0; j < table->lengths[i - 1]; j++)
             {
-              if (h_make_node (i, table->values[i - 1][j], tree) == NULL)
+              status = false;
+              if (h_make_node (i, table->values[i - 1][j], tree, &status)
+                  == NULL)
                 {
                   JPEG_LOG ("[E] jpegloader: Huffman tree construct error\n");
                   return NULL;
@@ -52,8 +56,10 @@ void
 h_clear_tree (huffman_node_t *root)
 {
   if (root == NULL)
-    return;
-
+    {
+      return;
+    }
+  
   h_clear_tree (root->left);
   h_clear_tree (root->right);
 
@@ -92,11 +98,11 @@ h_is_leaf (const huffman_node_t *node)
 /* ****************************** h_make_node ****************************** */
 
 huffman_node_t *
-h_make_node (uint8_t length, int value, huffman_node_t *root)
+h_make_node (uint8_t length, int value, huffman_node_t *root, bool *status)
 {
   huffman_node_t *node;
 
-  if (root == NULL)
+  if (root == NULL || (*status))
     return NULL;
 
   if (length == 0)
@@ -104,84 +110,32 @@ h_make_node (uint8_t length, int value, huffman_node_t *root)
       root->value = value;
       return root;
     }
-  else
+
+  // Left node is not exist. When created it will be empty
+  if (root->left == NULL)
     {
-      // Left node is not exist. When created it will be empty
+      root->left = (huffman_node_t *)malloc (sizeof (huffman_node_t));
       if (root->left == NULL)
         {
-          root->left = (huffman_node_t *)malloc (sizeof (huffman_node_t));
-          if (root->left == NULL)
-            {
-              JPEG_LOG ("[E] Can not allocate memory\n");
-              return NULL;
-            }
-
-          root->left->left = NULL;
-          root->left->right = NULL;
-          root->left->value = -1;
-          root->left->level = root->level + 1;
-          root->left->code = (root->code << 1);
-          node = h_make_node (length - 1, value, root->left);
-          if (node == NULL) // Error
-            {
-              return NULL;
-            }
-          else
-            return node;
+          *status = true;
+          JPEG_LOG ("[E] Can not allocate memory\n");
+          return NULL;
         }
-      else
-        {
-          if (!h_is_leaf (root->left)) // Left exists and not leaf
-            {
-              node = h_make_node (length - 1, value, root->left);
-              if (node == NULL) // Node is busy check right
-                {
-                  if (root->right == NULL)
-                    {
-                      root->right
-                          = (huffman_node_t *)malloc (sizeof (huffman_node_t));
-                      if (root->right == NULL)
-                        {
-                          JPEG_LOG ("[E] Can not allocate memory\n");
-                          return NULL;
-                        }
 
-                      root->right->left = NULL;
-                      root->right->right = NULL;
-                      root->right->value = -1;
-                      root->right->level = root->level + 1;
-                      root->right->code = (root->code << 1) + 1;
-                      node = h_make_node (length - 1, value, root->right);
-                      if (node == NULL) // Error
-                        {
-                          return NULL;
-                        }
-                      else
-                        return node;
-                    }
-                  else
-                    {
-                      if (!h_is_leaf (
-                              root->right)) // Right exists and not leaf
-                        {
-                          node = h_make_node (length - 1, value, root->right);
-                          if (node == NULL) // Error
-                            {
-                              return NULL;
-                            }
-                          else
-                            return node;
-                        }
-                      else
-                        {
-                          return NULL;
-                        }
-                    }
-                }
-              else
-                return node;
-            }
-          else
+      root->left->left = NULL;
+      root->left->right = NULL;
+      root->left->value = -1;
+      root->left->level = root->level + 1;
+      root->left->code = (root->code << 1);
+      node = h_make_node (length - 1, value, root->left, status);
+      return node;
+    }
+  else
+    {
+      if (!h_is_leaf (root->left)) // Left exists and not leaf
+        {
+          node = h_make_node (length - 1, value, root->left, status);
+          if (node == NULL) // Node is busy check right
             {
               if (root->right == NULL)
                 {
@@ -189,6 +143,7 @@ h_make_node (uint8_t length, int value, huffman_node_t *root)
                       = (huffman_node_t *)malloc (sizeof (huffman_node_t));
                   if (root->right == NULL)
                     {
+                      *status = true;
                       JPEG_LOG ("[E] Can not allocate memory\n");
                       return NULL;
                     }
@@ -198,30 +153,56 @@ h_make_node (uint8_t length, int value, huffman_node_t *root)
                   root->right->value = -1;
                   root->right->level = root->level + 1;
                   root->right->code = (root->code << 1) + 1;
-                  node = h_make_node (length - 1, value, root->right);
-                  if (node == NULL) // Error
-                    {
-                      return NULL;
-                    }
-                  else
-                    return node;
+                  node = h_make_node (length - 1, value, root->right, status);
+                  return node;
                 }
               else
                 {
                   if (!h_is_leaf (root->right)) // Right exists and not leaf
                     {
-                      node = h_make_node (length - 1, value, root->right);
-                      if (node == NULL) // Error
-                        {
-                          return NULL;
-                        }
-                      else
-                        return node;
+                      node = h_make_node (length - 1, value, root->right,
+                                          status);
+                      return node;
                     }
                   else
                     {
                       return NULL;
                     }
+                }
+            }
+          else
+            return node;
+        }
+      else
+        {
+          if (root->right == NULL)
+            {
+              root->right = (huffman_node_t *)malloc (sizeof (huffman_node_t));
+              if (root->right == NULL)
+                {
+                  *status = true;
+                  JPEG_LOG ("[E] Can not allocate memory\n");
+                  return NULL;
+                }
+
+              root->right->left = NULL;
+              root->right->right = NULL;
+              root->right->value = -1;
+              root->right->level = root->level + 1;
+              root->right->code = (root->code << 1) + 1;
+              node = h_make_node (length - 1, value, root->right, status);
+              return node;
+            }
+          else
+            {
+              if (!h_is_leaf (root->right)) // Right exists and not leaf
+                {
+                  node = h_make_node (length - 1, value, root->right, status);
+                  return node;
+                }
+              else
+                {
+                  return NULL;
                 }
             }
         }

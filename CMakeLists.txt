@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.18)
 
 project(
   jpegloader
-  VERSION 0.1.0.4
+  VERSION 0.1.1.0
   DESCRIPTION "Lightweight JPEG loader library"
   HOMEPAGE_URL "https://gitverse.ru/DimaO87/jpegloader"
   LANGUAGES C
@@ -120,7 +120,7 @@ configure_package_config_file(
 
 write_basic_package_version_file(
   ${CMAKE_CURRENT_BINARY_DIR}/jpegloaderConfigVersion.cmake
-  VERSION 0.1.0
+  VERSION 0.1.1
   COMPATIBILITY SameMajorVersion
 )
 

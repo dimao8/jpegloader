@@ -71,6 +71,8 @@ jpeg_init ()
           ctx->dht_dc[i].values[j] = NULL;
         }
 
+      ctx->huffman_tree_dc[i] = NULL;
+
       // AC values
       ctx->dht_ac[i].class_dest
           = (DHT_CLASS_INV << DHT_CLASS_POS)
@@ -80,6 +82,8 @@ jpeg_init ()
           ctx->dht_ac[i].lengths[j] = 0;
           ctx->dht_ac[i].values[j] = NULL;
         }
+
+      ctx->huffman_tree_ac[i] = NULL;
     }
 
   // Scans
@@ -304,9 +308,6 @@ jpeg_decoding (jpeg_context_t *jpeg_context, jpeg_header_t *header,
           jpeg_install_mcu (jpeg_context, hs, vs, i * hs * 8, j * vs * 8);
         }
     }
-
-  make_tga (jpeg_context->rgb, jpeg_context->header.width,
-            jpeg_context->header.height, "result.tga");
 
   return JPEG_NO_ERROR;
 }

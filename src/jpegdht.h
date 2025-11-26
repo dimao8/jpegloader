@@ -1,6 +1,7 @@
 #ifndef JPEGDHT_H
 #define JPEGDHT_H
 
+#include "jpegcontext.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -20,5 +21,8 @@ typedef struct jpeg_context_tag jpeg_context_t;
  */
 bool jpeg_dht_extract (jpeg_context_t *context, const uint8_t *stream,
                        size_t stream_size, size_t *pos);
+
+bool jpeg_dht_copy (jpeg_context_t *context, const jpeg_dht_t *dht,
+                    uint8_t class, uint8_t destination);
 
 #endif // JPEGDHT_H

@@ -16,8 +16,22 @@ target_link_libraries(
 
 # t_test
 add_test(
-  NAME t_test
-  COMMAND $<TARGET_FILE:test> ${TESTS_SRC_DIR}/33.jpg
+  NAME t_test_420
+  COMMAND $<TARGET_FILE:test> ${TESTS_SRC_DIR}/lenna_baseline_420.jpg
+  WORKING_DIRECTORY ${TESTS_BIN_DIR}
+)
+
+# t_test
+add_test(
+  NAME t_test_422
+  COMMAND $<TARGET_FILE:test> ${TESTS_SRC_DIR}/lenna_baseline_422.jpg
+  WORKING_DIRECTORY ${TESTS_BIN_DIR}
+)
+
+# t_test
+add_test(
+  NAME t_test_444
+  COMMAND $<TARGET_FILE:test> ${TESTS_SRC_DIR}/lenna_baseline_444.jpg
   WORKING_DIRECTORY ${TESTS_BIN_DIR}
 )
 

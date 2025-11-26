@@ -68,6 +68,8 @@ typedef struct jpeg_dht_tag
 #define DHT_DESTINATION(x) ((x >> DHT_DESTINATION_POS) & 0xF)
 #define DHT_CLASS_INV 0xF
 #define DHT_DESTINATION_INV 0xF
+#define DHT_CLASS_DC 0
+#define DHT_CLASS_AC 1
 
 /**
  * \brief Define arithmetic coding (DAC marker content)
